@@ -19,7 +19,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def index():
-    return render_template('chat3.html')
+    return render_template('testing.html')
 
 
 @app.route('/geturl', methods=['POST'])
@@ -35,11 +35,13 @@ def geturl():
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1024, chunk_overlap=80, length_function=len, is_separator_regex=False
         )
-        print(loader.load())
-        pages = loader.load_and_split(text_splitter=text_splitter)
-        #print(pages)
+        #print(loader.load())
+        result = loader.load()
+        #pages = loader.load_and_split(text_splitter=text_splitter)
+        context = "\n\n".join([doc.page_content for doc in result])
+        print(context)
 
-        return jsonify({'message': f'URL uploaded successfully'}), 200
+        return jsonify(context), 200
 
     except Exception as e:
         return jsonify({'error': 'Failed to process URL'}), 500
