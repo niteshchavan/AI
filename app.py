@@ -11,9 +11,9 @@ from langchain_chroma import Chroma
 import re
 
 # Code for debuging
-#chat_message_history = SQLChatMessageHistory(
-#    session_id="1", connection_string="sqlite:///sqlite.db"
-#)
+chat_history = SQLChatMessageHistory(
+    session_id="1", connection_string="sqlite:///sqlite.db"
+)
 #    messages = chain_with_history.messages
 #    print(messages)
 
@@ -80,7 +80,8 @@ def query():
         response = chain_with_history.invoke({"question": query_text, "context": context }, config=config)
         print("response: ", response.content, "\n\n")
 
-
+        messages = chat_history.messages
+        print("messages: ", messages)
         return jsonify({'message': response.content}), 200
 
     except Exception as e:
