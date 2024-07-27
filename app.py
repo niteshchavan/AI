@@ -1,60 +1,93 @@
+from langchain_community.chat_message_histories import SQLChatMessageHistory
 from flask import Flask, request, render_template, jsonify
-from langchain_chroma import Chroma
-from langchain_community.document_loaders.recursive_url_loader import RecursiveUrlLoader
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_community.chat_models import ChatOllama
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders.recursive_url_loader import RecursiveUrlLoader
 from bs4 import BeautifulSoup
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_community.chat_models import ChatOllama
-from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain_community.chat_message_histories import SQLChatMessageHistory
-from langchain_core.messages import HumanMessage
+from langchain_chroma import Chroma
 import re
-import logging
 
-# Initialize logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Code for debuging
+#chat_message_history = SQLChatMessageHistory(
+#    session_id="1", connection_string="sqlite:///sqlite.db"
+#)
+#    messages = chain_with_history.messages
+#    print(messages)
 
-
-# Define Model
+#Define Model
 llm = ChatOllama(model="qwen2:0.5b")
+
+
+prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", "You are a bot your name is Alice you should reply in 100 words or less"),
+        MessagesPlaceholder(variable_name="history"),
+        ("human", "{context}\n\nQ: {question}\nA:"),
+    ]
+)
+
+chain = prompt | llm
+
+
+chain_with_history = RunnableWithMessageHistory(
+    chain,
+    lambda session_id: SQLChatMessageHistory(
+        session_id=session_id, connection_string="sqlite:///sqlite.db"
+    ),
+    input_messages_key="question",
+    history_messages_key="history",
+)
+
+
+chroma_db = 'chromadb'
+embedding_function = HuggingFaceEmbeddings(model_name='all-mpnet-base-v2')
+db = Chroma(persist_directory=chroma_db, embedding_function=embedding_function)
 
 def bs4_extractor(html: str) -> str:
     soup = BeautifulSoup(html, "lxml")
     return re.sub(r"\n\n+", "\n\n", soup.text).strip()
 
-chroma_db = 'chromadb'
-
-embedding_function = HuggingFaceEmbeddings(model_name='all-mpnet-base-v2')
-
-db = Chroma(persist_directory=chroma_db, embedding_function=embedding_function)
-
-
-# Create Prompt Template
-prompt_template = ChatPromptTemplate.from_messages([
-    ("system", "You are a bot your name is Alice you should reply in 100 words or less"), 
-    MessagesPlaceholder(variable_name="history"),
-    ("human", "{context}\n\nQ: {question}\nA:")
-    ]
-)
-#sync
-
-#Memory Management
-def get_session_history(session_id):
-    print(session_id)
-    return SQLChatMessageHistory(session_id, "sqlite:///memory.db")
-    
-runnable_with_history = RunnableWithMessageHistory(
-    llm,
-    get_session_history,
-)
-
 app = Flask(__name__)
+
 
 @app.route('/')
 def index():
     return render_template('chat3.html')
+
+
+
+@app.route('/query', methods=['POST'])
+def query():
+    try: 
+        data = request.get_json()
+        query_text = data.get("query_text", "")
+        print("question: " ,query_text, "\n\n")
+
+        retriever = db.as_retriever(
+            search_type="similarity_score_threshold",
+                search_kwargs={
+                    "k": 2,
+                    "score_threshold": 0.1,
+                },
+        )
+        documents = retriever.invoke(query_text)
+        context = "\n\n".join([doc.page_content for doc in documents])
+        print("context: ", context, "\n\n")
+        config = {"configurable": {"session_id": "1"}}
+        response = chain_with_history.invoke({"question": query_text, "context": context }, config=config)
+        print("response: ", response.content, "\n\n")
+
+
+        return jsonify({'message': response.content}), 200
+
+    except Exception as e:
+        print(e)
+        return jsonify({'message': 'Failed to process'}), 500
+
+
 
 @app.route('/geturl', methods=['POST'])
 def geturl():
@@ -76,36 +109,8 @@ def geturl():
         return jsonify({'message': f'URL uploaded successfully'}), 200
 
     except Exception as e:
-        logger.error(f"Error processing URL: {e}")
         return jsonify({'error': 'Failed to process URL'}), 500
-
-
-
-@app.route('/query', methods=['POST'])
-def query():
-    try:
-        data = request.get_json()
-        query_text = data.get("query_text", "")
-        print(query_text)
-        retriever = db.as_retriever(
-            search_type="similarity_score_threshold",
-                search_kwargs={
-                    "k": 2,
-                    "score_threshold": 0.1,
-                },
-        )
-
-        relevant_documents = retriever.invoke(query_text)
-        results = "\n\n".join([doc.page_content for doc in relevant_documents])
-        formatted_prompt = prompt_template.format(context=results, question=query_text)
-        response = runnable_with_history.invoke([HumanMessage(content=formatted_prompt)],
-                                                config={"configurable": {"session_id": "1"}},)
-        return jsonify({'message': response.content}), 200
-    except Exception as e:
-        logger.error(f"Error processing: {e}")
-        return jsonify({'error': 'Failed to process'}), 500
     
-
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5001, debug=True)
