@@ -70,19 +70,20 @@ def query():
         retriever = db.as_retriever(
             search_type="similarity_score_threshold",
                 search_kwargs={
-                    "k": 2,
+                    "k": 5,
                     "score_threshold": 0.1,
                 },
         )
         documents = retriever.invoke(query_text)
+        print(documents)
         context = "\n\n".join([doc.page_content for doc in documents])
-        print("context: ", context, "\n\n")
+        #print("context: ", context, "\n\n")
         config = {"configurable": {"session_id": "1"}}
         response = chain_with_history.invoke({"question": query_text, "context": context }, config=config)
-        print("response: ", response.content, "\n\n")
-
-        messages = chat_history.messages
-        print("messages: ", messages)
+        #print("response: ", response.content, "\n\n")
+        
+        #messages = chat_history.messages
+        #print("messages: ", messages)
         return jsonify({'message': response.content}), 200
 
     except Exception as e:
@@ -96,30 +97,27 @@ def geturl():
     try:
         data = request.get_json()
         url = data.get('url')
+        print(url)
         if not url:
             return jsonify({'error': 'No URL provided'}), 400
-        
+
         headers_to_split_on = [
             ("h1", "Header 1"),
             ("h2", "Header 2"),
             ("h3", "Header 3"),
             ("h4", "Header 4"),
         ]
-        loader = RecursiveUrlLoader(url)
-        pages= loader.load()
-
+        
         html_splitter = HTMLHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
-        #html_header_splits = html_splitter.split_text_from_url(url)
-        context = "\n\n".join([doc.page_content for doc in pages])
-        html_header_splits = html_splitter.split_text(context)
-        print(html_header_splits)
+        html_header_splits = html_splitter.split_text_from_url(url)
+        
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1024, chunk_overlap=80, length_function=len, is_separator_regex=False
         )
-        converted = "\n\n".join([doc.page_content for doc in html_header_splits])
-        
-        #Chroma.from_documents(texts, embedding_function, persist_directory=chroma_db)
-        
+        result =text_splitter.split_documents(html_header_splits)
+        print(result)
+        Chroma.from_documents(result, embedding_function, persist_directory=chroma_db)
+
         return jsonify({'message': f'URL uploaded successfully'}), 200
 
     except Exception as e:

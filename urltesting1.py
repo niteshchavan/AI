@@ -42,19 +42,28 @@ def geturl():
             ("h3", "Header 3"),
             ("h4", "Header 4"),
         ]
-        loader = RecursiveUrlLoader(url)
-        pages= loader.load()
         
         html_splitter = HTMLHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
-        context = "\n\n".join([doc.page_content for doc in pages])
-        html_header_splits = html_splitter.split_text(context)
-        print(html_header_splits)
-        resurlt = "\n\n".join([doc.page_content for doc in html_header_splits])
+        html_header_splits = html_splitter.split_text_from_url(url)
+        
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1024, chunk_overlap=80, length_function=len, is_separator_regex=False
+        )
+        result =text_splitter.split_documents(html_header_splits)
+        
+        print(result)
+        
+        
+        #context = "\n\n".join([doc.page_content for doc in pages])
+        #html_header_splits = html_splitter.split_text(context)
+        #print(html_header_splits)
+        #resurlt = "\n\n".join([doc.page_content for doc in html_header_splits])
 
 
-        return jsonify(resurlt), 200
+        return jsonify({'message': f'URL uploaded successfully'}), 200
 
     except Exception as e:
+        print(e)
         return jsonify({'error': 'Failed to process URL'}), 500
     
 
