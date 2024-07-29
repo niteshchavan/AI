@@ -8,6 +8,7 @@ from langchain_community.document_loaders.recursive_url_loader import RecursiveU
 from bs4 import BeautifulSoup
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
+from langchain_text_splitters import HTMLHeaderTextSplitter
 import re
 
 # Code for debuging
@@ -97,19 +98,32 @@ def geturl():
         url = data.get('url')
         if not url:
             return jsonify({'error': 'No URL provided'}), 400
+        
+        headers_to_split_on = [
+            ("h1", "Header 1"),
+            ("h2", "Header 2"),
+            ("h3", "Header 3"),
+            ("h4", "Header 4"),
+        ]
+        loader = RecursiveUrlLoader(url)
+        pages= loader.load()
 
-        loader = RecursiveUrlLoader(url, extractor=bs4_extractor)
-
+        html_splitter = HTMLHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
+        #html_header_splits = html_splitter.split_text_from_url(url)
+        context = "\n\n".join([doc.page_content for doc in pages])
+        html_header_splits = html_splitter.split_text(context)
+        print(html_header_splits)
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1024, chunk_overlap=80, length_function=len, is_separator_regex=False
         )
-        pages = loader.load_and_split(text_splitter=text_splitter)
-
-        Chroma.from_documents(pages, embedding_function, persist_directory=chroma_db)
+        converted = "\n\n".join([doc.page_content for doc in html_header_splits])
+        
+        #Chroma.from_documents(texts, embedding_function, persist_directory=chroma_db)
         
         return jsonify({'message': f'URL uploaded successfully'}), 200
 
     except Exception as e:
+        print(e)
         return jsonify({'error': 'Failed to process URL'}), 500
     
 

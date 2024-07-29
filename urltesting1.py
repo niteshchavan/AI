@@ -3,13 +3,10 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders.recursive_url_loader import RecursiveUrlLoader
 from bs4 import BeautifulSoup
 import re
+from langchain_text_splitters import HTMLHeaderTextSplitter
+
 
 from langchain_text_splitters import HTMLSectionSplitter
-
-
-def bs4_extractor_old(html: str) -> str:
-    soup = BeautifulSoup(html, "lxml")
-    return re.sub(r"\n\n+", "\n\n", soup.text).strip()
 
 # Enhanced extractor function
 def bs4_extractor(html: str) -> str:
@@ -20,7 +17,6 @@ def bs4_extractor(html: str) -> str:
     text = re.sub(r"\n\s*\n", "\n\n", text)  # Remove multiple newlines
     text = re.sub(r"\s+", " ", text).strip()  # Remove extra spaces
     return text
-
 
 
 app = Flask(__name__)
@@ -39,18 +35,24 @@ def geturl():
         if not url:
             return jsonify({'error': 'No URL provided'}), 400
 
-        loader = RecursiveUrlLoader(url, extractor=bs4_extractor)
+        print(url)
+        headers_to_split_on = [
+            ("h1", "Header 1"),
+            ("h2", "Header 2"),
+            ("h3", "Header 3"),
+            ("h4", "Header 4"),
+        ]
+        loader = RecursiveUrlLoader(url)
+        pages= loader.load()
         
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1024, chunk_overlap=80, length_function=len, is_separator_regex=False
-        )
-        #print(loader.load())
-        #result = loader.load()
-        pages = loader.load_and_split(text_splitter=text_splitter)
+        html_splitter = HTMLHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
         context = "\n\n".join([doc.page_content for doc in pages])
-        print(context)
+        html_header_splits = html_splitter.split_text(context)
+        print(html_header_splits)
+        resurlt = "\n\n".join([doc.page_content for doc in html_header_splits])
 
-        return jsonify(context), 200
+
+        return jsonify(resurlt), 200
 
     except Exception as e:
         return jsonify({'error': 'Failed to process URL'}), 500
