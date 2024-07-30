@@ -44,12 +44,20 @@ chain_with_history = RunnableWithMessageHistory(
 
 
 chroma_db = 'chromadb'
+
 embedding_function = HuggingFaceEmbeddings(model_name='all-mpnet-base-v2')
+
 db = Chroma(persist_directory=chroma_db, embedding_function=embedding_function)
 
+# Enhanced extractor function
 def bs4_extractor(html: str) -> str:
     soup = BeautifulSoup(html, "lxml")
-    return re.sub(r"\n\n+", "\n\n", soup.text).strip()
+    for script in soup(["script", "style"]):
+        script.decompose()  # Remove all script and style elements
+    text = soup.get_text()  # Extract the text content
+    text = re.sub(r"\n\s*\n", "\n\n", text)  # Remove multiple newlines
+    text = re.sub(r"\s+", " ", text).strip()  # Remove extra spaces
+    return text
 
 app = Flask(__name__)
 
@@ -100,23 +108,16 @@ def geturl():
         print(url)
         if not url:
             return jsonify({'error': 'No URL provided'}), 400
+        
+        loader = RecursiveUrlLoader(url, extractor=bs4_extractor)
 
-        headers_to_split_on = [
-            ("h1", "Header 1"),
-            ("h2", "Header 2"),
-            ("h3", "Header 3"),
-            ("h4", "Header 4"),
-        ]
-        
-        html_splitter = HTMLHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
-        html_header_splits = html_splitter.split_text_from_url(url)
-        
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1024, chunk_overlap=80, length_function=len, is_separator_regex=False
         )
-        result =text_splitter.split_documents(html_header_splits)
-        print(result)
-        Chroma.from_documents(result, embedding_function, persist_directory=chroma_db)
+
+        pages = loader.load_and_split(text_splitter=text_splitter)
+
+        Chroma.from_documents(pages, embedding_function, persist_directory=chroma_db)
 
         return jsonify({'message': f'URL uploaded successfully'}), 200
 
